@@ -63,6 +63,12 @@ app.use(session({
 }
 ));
 
+// Remove cache to prevent seeing previous page after logging out.
+app.use((req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    next();
+});
+
 app.get('/', (req,res) => {
     const html = `
     <h1> Login/Register </h1>
@@ -73,14 +79,7 @@ app.get('/', (req,res) => {
     res.send(html);
 });
 
-// Middleware function to check if the user is authenticated
-function requireAuth(req, res, next) {
-    if (!req.session.authenticated) {
-        res.redirect('/');
-    } else {
-        next();
-    }
-}
+
 
 
 app.get('/nosql-injection', async (req,res) => {
@@ -158,12 +157,12 @@ app.get('/createUser', (req,res) => {
 });
 
 app.post('/submitUser', async (req,res) => {
-    var email = req.body.email; // Get email from request
+    var email = req.body.email; 
     var username = req.body.username;
     var password = req.body.password;
 
     const schema = Joi.object({
-        email: Joi.string().email().required(), // Validate email
+        email: Joi.string().email().required(), 
         username: Joi.string().alphanum().max(20).required(),
         password: Joi.string().max(20).required()
     });
@@ -177,7 +176,7 @@ app.post('/submitUser', async (req,res) => {
 
     var hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    await userCollection.insertOne({email: email, username: username, password: hashedPassword}); // Save email to database
+    await userCollection.insertOne({email: email, username: username, password: hashedPassword}); 
     console.log("Inserted user");
 
     var html = "successfully created user";
@@ -186,7 +185,7 @@ app.post('/submitUser', async (req,res) => {
 
 app.get('/login', (req,res) => {
     var errorMessage = req.session.errorMessage || '';
-    req.session.errorMessage = ''; // Clear the error message after displaying it
+    req.session.errorMessage = ''; //
     var html = `
     log in
     <form action='/loggingin' method='post'>
@@ -251,9 +250,6 @@ app.get('/loggedin', (req,res) => {
     res.redirect('/members');
 });
 
-// Apply the middleware to all routes
-app.use(requireAuth);
-
 // Function to get a random image file from the images folder
 function getRandomImage() {
     const imageFolder = './images/random';
@@ -262,14 +258,19 @@ function getRandomImage() {
     return imageFiles[randomIndex];
 }
 
-// const fs = require('fs');
-// const path = require('path');
-
 // Serve static files from the 'images' folder
 app.use('/images', express.static(path.join(__dirname, 'images')));
 
+
+
 app.get('/members', (req, res) => {
-    // Path to the 'random' subfolder within the 'images' folder
+    // Check if the user is authenticated
+    if (!req.session.authenticated) {
+        // If not authenticated, redirect to login page
+        res.redirect('/');
+        return;
+    }
+
     const imageFolder = './images/random';
 
     // Read the contents of the 'random' subfolder
@@ -278,8 +279,6 @@ app.get('/members', (req, res) => {
             console.error('Error reading random images folder:', err);
             return res.status(500).send('Internal Server Error');
         }
-
-        // Select a random image from the list
         const randomImage = imageFiles[Math.floor(Math.random() * imageFiles.length)];
 
         // Construct HTML response with the random image
@@ -294,31 +293,25 @@ app.get('/members', (req, res) => {
 });
 
 
+app.get('/logout', (req, res) => {
+    // Step 1: Destroy the session
+    req.session.destroy(err => {
+        if (err) {
+            console.error('Error destroying session:', err);
+            res.status(500).send('Internal Server Error');
+            return;
+        }
 
-app.get('/logout', (req,res) => {
-	req.session.destroy();
-    res.redirect('/');
+        // Step 2: Clear session-related cookies
+        res.clearCookie('connect.sid');
+
+        // Step 3: Send a message indicating logging out
+        res.redirect('/');
+        // Step 4: Redirect the user to the home page after a short delay
+    });
 });
-
-
-app.get('/cat/:id', (req,res) => {
-
-    var cat = req.params.id;
-
-    if (cat == 1) {
-        res.send("Fluffy: <img src='/fluffy.gif' style='width:250px;'>");
-    }
-    else if (cat == 2) {
-        res.send("Socks: <img src='/socks.gif' style='width:250px;'>");
-    }
-    else {
-        res.send("Invalid cat id: "+cat);
-    }
-});
-
 
 app.use(express.static(__dirname + "/public"));
-
 
 app.get('*', (req, res) => {
     // Send the error page with 404 wallpaper
@@ -347,8 +340,6 @@ app.get('*', (req, res) => {
         </html>
     `);
 });
-
-
 
 app.listen(port, () => {
 	console.log("Node application listening on port "+port);
